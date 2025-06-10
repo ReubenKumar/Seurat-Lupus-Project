@@ -1,0 +1,222 @@
+---
+title: "Lupus"
+author: "Reuben"
+date: "2025-06-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Clean environment
+
+```{r}
+rm(list = ls())
+```
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(pheatmap)
+library(dplyr)
+```
+
+Load Seurat object
+```{r}
+object = readRDS("SkinAnnotatedSeuratObject.RDS")
+print(object)
+```
+Clear the object, as we are going to perform the analysis from scratch, so we only want the raw data
+```{r}
+# Extract raw counts from the RNA assay
+raw_counts <- GetAssayData(object, assay = "RNA", slot = "counts")
+# Create a new Seurat object with only raw counts - this will automatically remove counts that have 0 values for all cells
+new_object <- CreateSeuratObject(counts = raw_counts)
+
+# copy over the metadata - only the important aspects eg. sample type and percentage of mitochondrial content- we dont want to copy the clustering information because we are doing that ourselves.
+new_object@meta.data <- object@meta.data[1:8]
+
+# Check new object
+print(new_object) 
+```
+
+```{r}
+rm(object)
+```
+
+
+ Get an idea of what the raw counts and meta data look like.
+```{r}
+print(head(new_object@assays$RNA$counts))
+print(head(new_object@meta.data))
+```
+
+Quality control - we want to remove cells with high mitochondrial gene expression, as this is a sign that the cell is stressed or dying.
+We also want to remove cells with a very low or very high amounts of detected genes, as these can represent empty droplets or droplets with more than one cell in the data generation process.
+```{r}
+#We already have the percentage of mitochondrial gene counts in our metadata.
+#fliter out bad cells
+new_object <- subset(new_object, subset = nFeature_RNA > 200 & nFeature_RNA < 5000 & percent.mito < 10)
+```
+
+
+Normalise between cells to account for differences in library size and read depth.
+```{r}
+new_object <- NormalizeData(new_object)
+```
+We can now look for the most varying genes in our dataset, as these will hold the most biological meaning.
+```{r}
+# Find the genes that vary the most between cells
+new_object <- FindVariableFeatures(new_object, selection.method = "vst", nfeatures = 2000)
+VariableFeaturePlot(new_object)
+```
+
+
+Scale across genes to make them comparable.
+```{r}
+new_object <- ScaleData(new_object, vars.to.regress = "percent.mito", features = VariableFeatures(new_object))
+# regress out the effect of mitochondrial genes
+```
+
+Perform a PCA on the processed data
+PCA is performed to lower the dimensionality of the dataset.
+```{r}
+new_object <- RunPCA(new_object, feature = VariableFeatures(new_object))
+new_object
+```
+ Plot an Elbow plot to identify how many dimensions to include.
+```{r}
+ElbowPlot(new_object)
+```
+It seems like after 15 dimensions very little variability is captured,
+so we will continue using 15 dimensions.
+
+Next we will cluster the data using nearest neighbours.
+
+```{r}
+new_object <- FindNeighbors(new_object, dims = 1:15, )
+new_object <-FindClusters(new_object, resolution = 0.5)
+
+# plot the clusters in a UMAP
+new_object <- RunUMAP(new_object, dims = 1:15)
+DimPlot(new_object, reduction = 'umap')
+```
+```{r}
+# plot again labelling based on sample type to determine if we should use harmony integration.
+DimPlot(new_object, reduction = 'umap', group.by = "SampleGroup")
+DimPlot(new_object, reduction = 'umap', group.by = "SampleID")
+```
+
+Based on these two plots it does not seem like harmony is needed as the different samples seem to be integrated, so there does not seem to be a batch effect.
+
+
+```{r}
+#Find marker genes for each cluster
+new_object.markers <- FindAllMarkers(new_object, 
+                                only.pos = TRUE,
+                                min.pct = 0.25,
+                                logfc.threshold = 0.5)
+#Extract top 3 markers for each cluster based on avg log2 fold change
+top_markers <- new_object.markers %>% 
+    group_by(cluster) %>%
+    slice_max(n = 3, order_by = avg_log2FC)
+top_markers
+```
+```{bash}
+saveRDS(new_object, file = "filtered_scaled_seurat_object.rds")
+```
+
+```{r}
+# list of cells and their corresponding markers found in skin - from CellMarker 2.0 database
+cell_markers <- list(
+  Activated_T_cell = c("CD2", "CD27", "CD28", "CD3E", "CD4", "CD69", "CD8A", 
+                       "CD8B", "ICOS", "IFNG", "IL2", "IL2RA", "TNF", "TNFRSF4", "TNFRSF9"),
+  Adipocyte = c("APOE", "CFD"),
+  Antigen_presenting_cell = c("HLA-DPB1", "HLA-DQA1", "HLA-DRA"),
+  B_cell = c("CD19", "CD79A", "IGHD", "JCHAIN", "MS4A1"),
+  Basal_cell = c("CDH3", "DSC1", "IVL", "KRT14", "KRT2", "KRT5"),
+  Basal_epithelial_cell = c("KRT14", "KRT5"),
+  Basal_keratinocyte = c("KRT14", "KRT5"),
+  CD4_T_cell = c("CD3E", "CD69", "GJB2", "IL23R"),
+  CD8_T_cell = c("CD39", "CD8A", "CD8B","GZMK", "NKG7"),
+  Central_memory_T_cell = c("CCR7", "CD45RO", "CD69", "SELL"),
+  Conventional_dendritic_cell_1_cDC1 = c("IRF8", "WDFY4"),
+  Conventional_dendritic_cell_2_cDC2 = c("CD1B", "CD1C", "CD1E", "CXCR4", "IRF4", "SLCO5A1", "SOCS2"),
+  Dendritic_cell = c("CCL17", "CD1A", "CD1C", "CD68", "GZMB", "IL3RA", "ITGAX", "XCR1"),
+  Dermal_cell = c("APCDD1", "SFRP2", "WIF1"),
+  Differentiated_keratinocyte = c("KRT1", "KRT10"),
+  Dopamine_neuron = c("CALB1", "CCK", "DDC", "DRD1", "DRD2", "EN1", "EN2", "FOXA1", 
+                      "LMX1A", "LMX1B", "OTX2", "PITX3", "SLC18A1", "SOX1", "SOX2", "TH"),
+  Endothelial_cell = c("CD34", "CDH5", "CLDN5", "CLEC14A", "CSF3", "EGFL7", "PECAM1", "VWF"),
+  Epidermal_cell = c("ANLN", "CD24", "CKAP2L", "EPCAM", "IVL", "TP63"),
+  Fibroblast = c("APCDD1", "CCL19", "CD26", "CD36", "CD90", "COL1A1", 
+                 "COL1A2", "COL2A2", "COL6A2", "COL6A5", "CXCL12", "CXCL14", "FAP", 
+                 "FBLN1", "MEG3", "PAX1", "PCOLCE", "PDGFRA", "PLA2G2A", "SFPR4"),
+  Gamma_delta_T_cell = c("NCAM1", "NCR1", "TCRD", "TCRG"),
+  Healing_Enriched_Fibroblast = c("PLA2G2A"),
+  Keratinocyte = c("DEFB1", "GJB2", "KRT1", "KRT14", "KRT15", "KRT2", "KRT5", "SPRR2A"),
+  Keratinocyte_progenitor_cell = c("CD34"),
+  Lymphatic_endothelial_cell = c("CCL21", "LYVE1"),
+  Lymphocyte = c("CD31", "CD3D", "CD7"),
+  M1_macrophage = c("IL1B", "S100A8"),
+  M2_macrophage = c("CD163", "CD204", "CD206", "DAB2", "MRC1"),
+  Macrophage = c("AIF1", "CD14", "CD163", "CD1A", "CD1C", "CD68", "F13A1", "MS4A4A"),
+  Mast_cell = c("CPA3", "TPSAB1", "TPSB2"),
+  Melanocyte = c("DCT", "MITF", "MLANA", "PMEL", "TYR", "TYRP1"),
+  Melanocytes_and_Schwann_cell = c("CDH19", "MLANA"),
+  Memory_B_cell = c("MS4A1"),
+  Memory_CD4plus_T_cell = c("CD3E", "CD4"),
+  Memory_T_cell = c("CD28", "SELL"),
+  Merkel_cell = c("ATOH1", "KRT18", "KRT20", "KRT8", "NCAM"),
+  Monocyte = c("AIF1", "CD163", "EREG", "FCGR1A", "FCN1", "S100A8", "S100A9"),
+  Mononuclear_phagocyte = c("CD1C", "LYZ"),
+  Myeloid_cell = c("CD68", "CXCL8", "IL1B", "LYZ"),
+  Myeloid_dendritic_cell = c("CD207", "CD209", "CD40","CD86"),
+  Natural_killer_cell = c("CCL19", "CCL4", "CCL5", "CD163", "CD8A", "CX3CR1", "EOMES", 
+                          "FCER1G", "FCGR3A", "FCGRN3A", "GNLY", "GZMB", "KLRB1", 
+                          "KLRK1", "NCAM1", "TCRD", "TCRG", "TNFRSF18", "TRDC", "XCL1", "XCL2"),
+  Natural_killer_T_cell = c("CD3D", "CD3E", "NCR1", "NKG7", "CCL5", "CD3D"),
+  Papillary_fibroblast = c("APCDD1", "COL6A1", "NTN1", "PDPN", "PTGDS"),
+  Peridermal_keratinocyte = c("KRT4"),
+  Regulatory_T_cell = c("CD3E", "CD8A", "CD8B", "CTLA4"),
+  Resident_memory_T_cell = c("F13A1", "LYVE1", "MRC1"),
+  Reticular_fibroblast = c("ACTA2", "ELN", "MFAP5", "MGP"),
+  Schwann_cell = c("CDH19", "DCN", "LUM", "PLP1", "S100B", "SCN7A", "SOX10"),
+  Skin_resident_T_cell = c("CD69"),
+  Smooth_muscle_cell = c("ACTA2", "DES", "TAGLN", "TPM2"),
+  Sweat_and_sebaceous_gland_cell = c("DCD", "AQP5"),
+  T_cell = c("CD2", "CD3", "CD3D", "CD3E", "CD3G", "IL2", "TIGIT", "TRAC", "TRBC2"),
+  Tissue_resident_memory_CD4plus_T_cell = c("CD69", "CXCR6", "RUNX3"),
+  Tissue_resident_memory_T_cell = c("CD103", "CD49a", "CD69")
+)
+  # Initialize an empty list for the plots
+v_plots <- list()
+
+# Loop through each cell type from the cell marker list
+for (cell_type in names(cell_markers)) {
+  genes <- cell_markers[[cell_type]]
+  
+# Filter out genes not found in the scaled Seurat object
+genes_in_new_object <- genes[genes %in% rownames(GetAssayData(new_object, assay = "RNA", slot = "scale.data"))]
+
+  
+if (length(genes_in_new_object) > 0) {
+  plot <- VlnPlot(new_object, features = genes_in_new_object) + 
+  theme(axis.text.y = element_text(size = 10))
+  
+  v_plots[[cell_type]] <-plot
+  
+}else {
+    # Message if no genes found for that cell type
+    message(paste("No genes found in new_object for cell type:", cell_type))
+  }
+```
+
+Now we have a list of plots that we can check through to determine the cell cluster labels.
+
+```{r}
+#eg.
+v_plots[["Memory_B_cell"]]
+```
+
