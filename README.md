@@ -37,12 +37,5 @@ This project analyzes **10x Genomics 3' single-cell RNA-seq data** from patients
 - Seurat (version ≥ 5.x)
 - dplyr, ggplot2, and other tidyverse packages
 
----
-
-## 📊 Example Output
-
-![UMAP plot showing clustered cell types](figure/umap_clusters.png)
-
----
 
 
