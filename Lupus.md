@@ -613,8 +613,4 @@ print(FeaturePlot(new_object, features = cell_markers[["B_cell"]]))
 
 ![](Lupus_files/figure-markdown_github/unnamed-chunk-31-1.png)
 
-``` r
-print(FeaturePlot(new_object, features = cell_markers[["Memory_B_cell"]]))
-```
 
-![](Lupus_files/figure-markdown_github/unnamed-chunk-31-2.png)
