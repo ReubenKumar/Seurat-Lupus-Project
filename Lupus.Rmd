@@ -69,7 +69,7 @@ We can now look for the most varying genes in our dataset, as these will hold th
 ```{r}
 # Find the genes that vary the most between cells
 new_object <- FindVariableFeatures(new_object, selection.method = "vst", nfeatures = 2000)
-VariableFeaturePlot(new_object)
+print(VariableFeaturePlot(new_object))
 ```
 
 
@@ -83,11 +83,12 @@ Perform a PCA on the processed data
 PCA is performed to lower the dimensionality of the dataset.
 ```{r}
 new_object <- RunPCA(new_object, feature = VariableFeatures(new_object))
-new_object
+print(new_object)
 ```
- Plot an Elbow plot to identify how many dimensions to include.
+ 
+Plot an Elbow plot to identify how many dimensions to include.
 ```{r}
-ElbowPlot(new_object)
+print(ElbowPlot(new_object))
 ```
 It seems like after 15 dimensions very little variability is captured,
 so we will continue using 15 dimensions.
@@ -100,15 +101,20 @@ new_object <-FindClusters(new_object, resolution = 0.5)
 
 # plot the clusters in a UMAP
 new_object <- RunUMAP(new_object, dims = 1:15)
-DimPlot(new_object, reduction = 'umap')
+print(DimPlot(new_object, reduction = 'umap'))
 ```
-```{r}
-# plot again labelling based on sample type to determine if we should use harmony integration.
-DimPlot(new_object, reduction = 'umap', group.by = "SampleGroup")
-DimPlot(new_object, reduction = 'umap', group.by = "SampleID")
+```{bash}
+#save processed object
+saveRDS(new_object, file = "filtered_scaled_seurat_object.rds")
 ```
 
-Based on these two plots it does not seem like harmony is needed as the different samples seem to be integrated, so there does not seem to be a batch effect.
+```{r}
+# plot again labelling based on sample type to determine if we should use harmony integration.
+print(DimPlot(new_object, reduction = 'umap', group.by = "SampleGroup"))
+print(DimPlot(new_object, reduction = 'umap', group.by = "SampleID"))
+```
+
+Based on these two plots it does not appear that harmony is needed as the different samples seem to be integrated, so there isnt a batch effect.
 
 
 ```{r}
@@ -120,103 +126,163 @@ new_object.markers <- FindAllMarkers(new_object,
 #Extract top 3 markers for each cluster based on avg log2 fold change
 top_markers <- new_object.markers %>% 
     group_by(cluster) %>%
-    slice_max(n = 3, order_by = avg_log2FC)
-top_markers
-```
-```{bash}
-saveRDS(new_object, file = "filtered_scaled_seurat_object.rds")
-```
+    slice_max(n = 5, order_by = avg_log2FC)
+print(top_markers)
 
+#Plot a single top marker gene for the first cluster using the UMAP too see what cells have a high expression level,
+print(FeaturePlot(new_object, features = top_markers$gene[1]))
+#We can see that high expression is mainly in the cluster 0 for this gene, which is expected. Now we need to determine what cell types each marker gene is associated with.
+```
 ```{r}
-# list of cells and their corresponding markers found in skin - from CellMarker 2.0 database
 cell_markers <- list(
-  Activated_T_cell = c("CD2", "CD27", "CD28", "CD3E", "CD4", "CD69", "CD8A", 
-                       "CD8B", "ICOS", "IFNG", "IL2", "IL2RA", "TNF", "TNFRSF4", "TNFRSF9"),
-  Adipocyte = c("APOE", "CFD"),
-  Antigen_presenting_cell = c("HLA-DPB1", "HLA-DQA1", "HLA-DRA"),
-  B_cell = c("CD19", "CD79A", "IGHD", "JCHAIN", "MS4A1"),
-  Basal_cell = c("CDH3", "DSC1", "IVL", "KRT14", "KRT2", "KRT5"),
-  Basal_epithelial_cell = c("KRT14", "KRT5"),
-  Basal_keratinocyte = c("KRT14", "KRT5"),
-  CD4_T_cell = c("CD3E", "CD69", "GJB2", "IL23R"),
-  CD8_T_cell = c("CD39", "CD8A", "CD8B","GZMK", "NKG7"),
-  Central_memory_T_cell = c("CCR7", "CD45RO", "CD69", "SELL"),
-  Conventional_dendritic_cell_1_cDC1 = c("IRF8", "WDFY4"),
-  Conventional_dendritic_cell_2_cDC2 = c("CD1B", "CD1C", "CD1E", "CXCR4", "IRF4", "SLCO5A1", "SOCS2"),
-  Dendritic_cell = c("CCL17", "CD1A", "CD1C", "CD68", "GZMB", "IL3RA", "ITGAX", "XCR1"),
+  Activated_T_cell = c("CD69", "IL2", "IFNG"),
+  Adipocyte = c("APOE", "CFD", "ADIPOQ"),
+  Antigen_presenting_cell = c("HLA-DRA", "CD74", "HLA-DPB1"),
+  B_cell = c("CD19", "MS4A1", "CD79A"),
+  Basal_cell = c("KRT14", "KRT5", "CDH3"),
+  CD4_T_cell = c("CD3E", "CD4", "IL7R"),
+  CD8_T_cell = c("CD8A", "CD8B", "GZMK"),
+  Central_memory_T_cell = c("CCR7", "SELL", "CD45RO"),
+  Conventional_dendritic_cell_1_cDC1 = c("IRF8", "CLEC9A", "BATF3"),
+  Conventional_dendritic_cell_2_cDC2 = c("CD1C", "IRF4", "FCER1A"),
+  Dendritic_cell = c("ITGAX", "CD1C", "HLA-DRA"),
   Dermal_cell = c("APCDD1", "SFRP2", "WIF1"),
-  Differentiated_keratinocyte = c("KRT1", "KRT10"),
-  Dopamine_neuron = c("CALB1", "CCK", "DDC", "DRD1", "DRD2", "EN1", "EN2", "FOXA1", 
-                      "LMX1A", "LMX1B", "OTX2", "PITX3", "SLC18A1", "SOX1", "SOX2", "TH"),
-  Endothelial_cell = c("CD34", "CDH5", "CLDN5", "CLEC14A", "CSF3", "EGFL7", "PECAM1", "VWF"),
-  Epidermal_cell = c("ANLN", "CD24", "CKAP2L", "EPCAM", "IVL", "TP63"),
-  Fibroblast = c("APCDD1", "CCL19", "CD26", "CD36", "CD90", "COL1A1", 
-                 "COL1A2", "COL2A2", "COL6A2", "COL6A5", "CXCL12", "CXCL14", "FAP", 
-                 "FBLN1", "MEG3", "PAX1", "PCOLCE", "PDGFRA", "PLA2G2A", "SFPR4"),
-  Gamma_delta_T_cell = c("NCAM1", "NCR1", "TCRD", "TCRG"),
-  Healing_Enriched_Fibroblast = c("PLA2G2A"),
-  Keratinocyte = c("DEFB1", "GJB2", "KRT1", "KRT14", "KRT15", "KRT2", "KRT5", "SPRR2A"),
-  Keratinocyte_progenitor_cell = c("CD34"),
-  Lymphatic_endothelial_cell = c("CCL21", "LYVE1"),
-  Lymphocyte = c("CD31", "CD3D", "CD7"),
-  M1_macrophage = c("IL1B", "S100A8"),
-  M2_macrophage = c("CD163", "CD204", "CD206", "DAB2", "MRC1"),
-  Macrophage = c("AIF1", "CD14", "CD163", "CD1A", "CD1C", "CD68", "F13A1", "MS4A4A"),
-  Mast_cell = c("CPA3", "TPSAB1", "TPSB2"),
-  Melanocyte = c("DCT", "MITF", "MLANA", "PMEL", "TYR", "TYRP1"),
-  Melanocytes_and_Schwann_cell = c("CDH19", "MLANA"),
-  Memory_B_cell = c("MS4A1"),
-  Memory_CD4plus_T_cell = c("CD3E", "CD4"),
-  Memory_T_cell = c("CD28", "SELL"),
-  Merkel_cell = c("ATOH1", "KRT18", "KRT20", "KRT8", "NCAM"),
-  Monocyte = c("AIF1", "CD163", "EREG", "FCGR1A", "FCN1", "S100A8", "S100A9"),
-  Mononuclear_phagocyte = c("CD1C", "LYZ"),
-  Myeloid_cell = c("CD68", "CXCL8", "IL1B", "LYZ"),
-  Myeloid_dendritic_cell = c("CD207", "CD209", "CD40","CD86"),
-  Natural_killer_cell = c("CCL19", "CCL4", "CCL5", "CD163", "CD8A", "CX3CR1", "EOMES", 
-                          "FCER1G", "FCGR3A", "FCGRN3A", "GNLY", "GZMB", "KLRB1", 
-                          "KLRK1", "NCAM1", "TCRD", "TCRG", "TNFRSF18", "TRDC", "XCL1", "XCL2"),
-  Natural_killer_T_cell = c("CD3D", "CD3E", "NCR1", "NKG7", "CCL5", "CD3D"),
-  Papillary_fibroblast = c("APCDD1", "COL6A1", "NTN1", "PDPN", "PTGDS"),
-  Peridermal_keratinocyte = c("KRT4"),
-  Regulatory_T_cell = c("CD3E", "CD8A", "CD8B", "CTLA4"),
-  Resident_memory_T_cell = c("F13A1", "LYVE1", "MRC1"),
-  Reticular_fibroblast = c("ACTA2", "ELN", "MFAP5", "MGP"),
-  Schwann_cell = c("CDH19", "DCN", "LUM", "PLP1", "S100B", "SCN7A", "SOX10"),
-  Skin_resident_T_cell = c("CD69"),
-  Smooth_muscle_cell = c("ACTA2", "DES", "TAGLN", "TPM2"),
-  Sweat_and_sebaceous_gland_cell = c("DCD", "AQP5"),
-  T_cell = c("CD2", "CD3", "CD3D", "CD3E", "CD3G", "IL2", "TIGIT", "TRAC", "TRBC2"),
-  Tissue_resident_memory_CD4plus_T_cell = c("CD69", "CXCR6", "RUNX3"),
-  Tissue_resident_memory_T_cell = c("CD103", "CD49a", "CD69")
+  Differentiated_keratinocyte = c("KRT1", "KRT10", "IVL"),
+  Dopamine_neuron = c("TH", "DDC", "SLC18A2"),
+  Endothelial_cell = c("PECAM1", "VWF", "CDH5"),
+  Epidermal_cell = c("EPCAM", "IVL", "TP63"),
+  Fibroblast = c("COL1A1", "FAP", "PDGFRA"),
+  Gamma_delta_T_cell = c("TRDC", "TRGC1", "NCAM1"),
+  Healing_Enriched_Fibroblast = c("PLA2G2A", "COL1A1", "FBLN1"),
+  Keratinocyte = c("KRT14", "KRT5", "SPRR2A"),
+  Lymphatic_endothelial_cell = c("LYVE1", "PROX1", "PDPN"),
+  Lymphocyte = c("CD3D", "CD7", "CD2"),
+  M1_macrophage = c("IL1B", "S100A8", "TNF"),
+  M2_macrophage = c("CD163", "MRC1", "CD204"),
+  Macrophage = c("CD68", "CD163", "LYZ"),
+  Mast_cell = c("TPSAB1", "TPSB2", "CPA3"),
+  Melanocyte = c("MLANA", "PMEL", "TYR"),
+  Memory_B_cell = c("MS4A1", "CD27", "CD19"),
+  Memory_CD4plus_T_cell = c("CD4", "IL7R", "SELL"),
+  Memory_T_cell = c("CD28", "SELL", "IL7R"),
+  Monocyte = c("CD14", "LYZ", "FCN1"),
+  Myeloid_cell = c("LYZ", "CD68", "CXCL8"),
+  Myeloid_dendritic_cell = c("CD86", "CD40", "CD209"),
+  Natural_killer_cell = c("NCAM1", "NKG7", "GZMB"),
+  Natural_killer_T_cell = c("CD3E", "NKG7", "CCL5"),
+  Papillary_fibroblast = c("PDPN", "COL6A1", "APCDD1"),
+  Regulatory_T_cell = c("CD3E", "CTLA4", "FOXP3"),
+  Resident_memory_T_cell = c("CD69", "ITGAE", "CXCR6"),
+  Schwann_cell = c("SOX10", "PLP1", "S100B"),
+  Smooth_muscle_cell = c("ACTA2", "TAGLN", "MYH11"),
+  Sweat_and_sebaceous_gland_cell = c("DCD", "AQP5", "KRT7"),
+  T_cell = c("CD3D", "CD3E", "CD2"),
+  Tissue_resident_memory_T_cell = c("CD69", "ITGAE", "CXCR6")
 )
-  # Initialize an empty list for the plots
-v_plots <- list()
 
-# Loop through each cell type from the cell marker list
-for (cell_type in names(cell_markers)) {
-  genes <- cell_markers[[cell_type]]
-  
-# Filter out genes not found in the scaled Seurat object
-genes_in_new_object <- genes[genes %in% rownames(GetAssayData(new_object, assay = "RNA", slot = "scale.data"))]
+cluster_cell_types <- list()
 
+#Loop through each cluster number
+for (cluster_num in unique(top_markers$cluster)) {
   
-if (length(genes_in_new_object) > 0) {
-  plot <- VlnPlot(new_object, features = genes_in_new_object) + 
-  theme(axis.text.y = element_text(size = 10))
+  #Get the top marker genes for this cluster
+  top_genes <- top_markers[top_markers$cluster == cluster_num, ]$gene
   
-  v_plots[[cell_type]] <-plot
+  #Initialize an empty vector to hold matching cell types for this cluster
+  cell_type_matches <- c()
   
-}else {
-    # Message if no genes found for that cell type
-    message(paste("No genes found in new_object for cell type:", cell_type))
+  #Loop through each cell type in the marker list
+  for (cell_type in names(cell_markers)) {
+    genes <- cell_markers[[cell_type]]
+    
+    #Check if any of the top marker genes match the known markers for this cell type
+    if (length(intersect(top_genes, genes)) > 0) {
+      #Add the cell type name to the matches for this cluster
+      cell_type_matches <- c(cell_type_matches, cell_type)
+    }
   }
+  
+  #Add the cell types for this cluster into the main list
+  cluster_cell_types[[as.character(cluster_num)]] <- cell_type_matches
+}
+
+# Now print or inspect the matched cell types for each cluster
+print(cluster_cell_types)
+```
+```{r}
+#plot clusters for comparison
+print(DimPlot(new_object, reduction = 'umap'))
 ```
 
-Now we have a list of plots that we can check through to determine the cell cluster labels.
+#Now we have potential cell labels for each cluster. To finalise these we should plot them to check.
+```{r}
+#visualise marker expression for the two candidate cell types in cluster 0.
+print(FeaturePlot(new_object, features = cell_markers[["Regulatory_T_cell"]]))
+print(FeaturePlot(new_object, features = cell_markers[["Memory_T_cell"]]))
+#Cluster 0 shows stronger expression of Regulatory T cell markers, 
+#while Memory T cell markers are distributed across other clusters.
+#We'll label cluster 0 as Regulatory T cells.
+```
 
 ```{r}
-#eg.
-v_plots[["Memory_B_cell"]]
+#visualise marker expression for the two candidate cell types in cluster 1.
+print(FeaturePlot(new_object, features = cell_markers[["Healing_Enriched_Fibroblast"]]))
+#A lot of these markers also overlap with cluster 4, so I am not confident to label this cluster  #Healing_Enriched_Fibroblast, however, it is likely some type of fiberblast still, so labelling 
+#it fiberblast will be ok for now.
+```
+
+```{r}
+#cluster 2 was not found with our marker list, so we will move to cluster 3.
+print(FeaturePlot(new_object, features = cell_markers[[ "Smooth_muscle_cell"]]))
+# cluster 3 definitely seems to be a smooth muscle cell.
+```
+```{r}
+#cluster 4.
+print(FeaturePlot(new_object, features = cell_markers[["Dermal_cell"]]))
+# cluster 4 definitely seems to be a dermal cell.
+```
+
+```{r}
+#clusteer 5 was also missed out so we will look at cluster 6.
+
+print(FeaturePlot(new_object, features = cell_markers[["M1_macrophage"]]))
+
+print(FeaturePlot(new_object, features = cell_markers[["Macrophage"]]))
+
+print(FeaturePlot(new_object, features = cell_markers[["Monocyte"]]))
+
+print(FeaturePlot(new_object, features = cell_markers[["Myeloid_cell"]]))
+# likely a Macrophage or myeloid cel
+# This is not supprising as macrophages are a specialised type of myeloid cells.
+```
+```{r}
+# cluster 7 definitely a CD8 T cell
+print(FeaturePlot(new_object, features = cell_markers[["CD8_T_cell"]]))
+```
+```{r}
+# cluster 8 definitely a Differentiated keratinocyte
+print(FeaturePlot(new_object, features = cell_markers[["Differentiated_keratinocyte"]]))
+
+```
+```{r}
+# cluster 9 missed, cluster 10 definitely a Melanocyte
+print(FeaturePlot(new_object, features = cell_markers[["Melanocyte"]]))
+
+```
+```{r}
+# cluster 11 definitely a Lymphatic endothelial cell
+print(FeaturePlot(new_object, features = cell_markers[["Lymphatic_endothelial_cell"]]))
+```
+```{r}
+
+# cluster 12 definitely Sweat and sebaceous gland cells
+print(FeaturePlot(new_object, features = cell_markers[["Sweat_and_sebaceous_gland_cell"]]))
+```
+```{r}
+#clusters 13 and 15 are missed
+# cluster 14, definitely a B cell.
+print(FeaturePlot(new_object, features = cell_markers[["B_cell"]]))
+
+print(FeaturePlot(new_object, features = cell_markers[["Memory_B_cell"]]))
 ```
 
